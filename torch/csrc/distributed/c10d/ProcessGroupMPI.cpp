@@ -8,6 +8,7 @@
 #include <c10/core/DeviceGuard.h>
 #include <c10/util/irange.h>
 #include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
+#include <cuda_runtime.h>
 
 #if defined(OPEN_MPI) && OPEN_MPI
 #include <mpi-ext.h> // Needed for CUDA-aware check
@@ -994,14 +995,39 @@ c10::intrusive_ptr<Work> ProcessGroupMPI::_allgather_base(
         auto srcdata = (entry->src)[0];
         c10::DeviceGuard guard(srcdata.device());
         std::unique_lock<std::mutex> globalLock(pgGlobalMutex_);
+
+        void* sendbuf;
+        void* recvbuf;
+        int datasize = 0;
+
+        if (srcdata.device().is_cuda()) {
+          MPI_Datatype mpi_datatype = mpiDatatype.at(srcdata.scalar_type());
+          MPI_Type_size(mpi_datatype, &datasize);
+
+          cudaMallocHost(&sendbuf, srcdata.numel() * datasize);
+          cudaMallocHost(&recvbuf, dstdata.numel() * datasize);
+          cudaMemcpy(sendbuf, srcdata.data_ptr(), srcdata.numel() * datasize, cudaMemcpyDeviceToHost);
+        } else {
+          sendbuf = srcdata.data_ptr();
+          recvbuf = dstdata.data_ptr();
+        }
+        sendbuf = srcdata.data_ptr();
+        recvbuf = dstdata.data_ptr();
+
         MPI_CHECK(MPI_Allgather(
-            srcdata.data_ptr(),
+            sendbuf,
             srcdata.numel(),
             mpiDatatype.at(srcdata.scalar_type()),
-            dstdata.data_ptr(),
+            recvbuf,
             srcdata.numel(),
             mpiDatatype.at(dstdata.scalar_type()),
             pgComm_));
+
+        if (srcdata.device().is_cuda()) {
+          cudaMemcpy(dstdata.data_ptr(), recvbuf, dstdata.numel() * datasize, cudaMemcpyHostToDevice);
+          cudaFreeHost(sendbuf);
+          cudaFreeHost(recvbuf);
+        }
       };
 
   auto inputTensors = std::vector<at::Tensor>({inputTensor});
@@ -1028,13 +1054,38 @@ c10::intrusive_ptr<Work> ProcessGroupMPI::_reduce_scatter_base(
         auto srcdata = (entry->src)[0];
         c10::DeviceGuard guard(srcdata.device());
         std::unique_lock<std::mutex> globalLock(pgGlobalMutex_);
+
+        void* sendbuf;
+        void* recvbuf;
+        int datasize = 0;
+        if (srcdata.device().is_cuda()) {
+          // if not, we receive
+          //     [server:1:3401597 - context.c:1384][2025-04-24 22:21:29] ERROR ibv_reg_mr(addr:0x7f0f3da00000 size:4096) failed: Bad address device:mlx5_2
+          //     [1745533289.969238] [server:3401597:1]   tl_sharp_coll.c:111  TL_SHARP ERROR ucc_rcache_get failed
+          //     [server:3401597:1:3401642] Caught signal 11 (Segmentation fault: address not mapped to object at address (nil))
+          MPI_Datatype mpi_datatype = mpiDatatype.at(srcdata.scalar_type());
+          MPI_Type_size(mpi_datatype, &datasize);
+          cudaMallocHost(&sendbuf, srcdata.numel() * datasize);
+          cudaMallocHost(&recvbuf, dstdata.numel() * datasize);
+          cudaMemcpy(sendbuf, srcdata.data_ptr(), srcdata.numel() * datasize, cudaMemcpyHostToDevice);
+        } else {
+          sendbuf = srcdata.data_ptr();
+          recvbuf = dstdata.data_ptr();
+        }
+
         MPI_CHECK(MPI_Reduce_scatter_block(
-            srcdata.data_ptr(),
-            dstdata.data_ptr(),
+            sendbuf,
+            recvbuf,
             dstdata.numel(),
             mpiDatatype.at(srcdata.scalar_type()),
             mpiOp.at(opts.reduceOp),
             pgComm_));
+
+        if (srcdata.device().is_cuda()) {
+          cudaMemcpy(dstdata.data_ptr(), recvbuf, dstdata.numel() * datasize, cudaMemcpyDeviceToHost);
+          cudaFreeHost(sendbuf);
+          cudaFreeHost(recvbuf);
+        }
       };
 
   auto inputTensors = std::vector<at::Tensor>({inputTensor});
