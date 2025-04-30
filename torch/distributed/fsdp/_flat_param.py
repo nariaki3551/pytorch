@@ -1343,8 +1343,9 @@ class FlatParamHandle:
             self._use_unsharded_flat_param(unsharded_flat_param)
             return
         unsharded_flat_param = self._alloc_padded_unsharded_flat_param()
-        padded_unsharded_flat_param = self._all_gather_flat_param(unsharded_flat_param)
+        padded_unsharded_flat_param, all_gather_work = self._all_gather_flat_param(unsharded_flat_param)
         self._use_unsharded_flat_param(padded_unsharded_flat_param)
+        return all_gather_work
 
     def needs_unshard(self) -> bool:
         """Return if the handle's flat parameter needs to be unsharded."""
@@ -1427,6 +1428,10 @@ class FlatParamHandle:
             else self.process_group
         )
 
+        if dist.get_backend() == "mpi":
+            async_op = True
+        else:
+            async_op = False
         # HACK this should be handled by C10D
         if sharded_flat_param.is_cpu:  # type: ignore[attr-defined]
             tensor_list = list(
@@ -1435,12 +1440,13 @@ class FlatParamHandle:
                     dist.get_world_size(pg),  # type: ignore[arg-type]
                 )
             )
-            dist.all_gather(tensor_list, sharded_flat_param, group=pg)
+            all_gather_work = dist.all_gather(tensor_list, sharded_flat_param, group=pg, async_op=async_op)
         else:
-            dist.all_gather_into_tensor(
+            all_gather_work = dist.all_gather_into_tensor(
                 padded_unsharded_flat_param,
                 sharded_flat_param,
                 pg,
+                async_op=async_op,
             )
 
         if self._offload_params:
@@ -1451,7 +1457,7 @@ class FlatParamHandle:
                 sharded_flat_param,
                 self._device_handle.current_stream(),  # unshard_stream
             )
-        return padded_unsharded_flat_param
+        return padded_unsharded_flat_param, all_gather_work
 
     def _use_unsharded_flat_param(
         self,

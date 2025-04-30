@@ -298,7 +298,12 @@ def _unshard(
             ):
                 event.synchronize()
     with state._device_handle.stream(unshard_stream):
-        handle.unshard()
+        all_gather_work = handle.unshard()
+        if dist.get_backend() == "mpi":
+            if _FSDPState._unshard_work_to_wait is not None:
+                _FSDPState._unshard_work_to_wait.wait()
+                _FSDPState._unshard_work_to_wait = None
+        _FSDPState._unshard_work_to_wait = all_gather_work
         handle.post_unshard()
 
 
@@ -679,7 +684,10 @@ def _pre_backward_hook(
             # Don't wait during trace
             if not torch.distributed._functional_collectives.is_torchdynamo_compiling():
                 state._device_handle.current_stream().wait_stream(state._unshard_stream)
-
+            if dist.get_backend() == "mpi":
+                if _FSDPState._unshard_work_to_wait is not None:
+                    _FSDPState._unshard_work_to_wait.wait()
+                    _FSDPState._unshard_work_to_wait = None
         # Set this to `False` to ensure that a mistargeted prefetch does not
         # actually unshard these handles
         handle._needs_pre_backward_unshard = False
@@ -1210,10 +1218,15 @@ def _prefetch_handle(
     Prefetches the next handles if needed (without synchronization). An empty
     handles key cannot prefetch.
     """
+    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: prefetch_handle: {current_handle._handle_index}")
     if not current_handle:
         return
     handle = _get_handle_to_prefetch(state, current_handle)
     if not handle:
+        if dist.get_backend() == "mpi":
+            if _FSDPState._unshard_work_to_wait is not None:
+                _FSDPState._unshard_work_to_wait.wait()
+                _FSDPState._unshard_work_to_wait = None
         return
     # Temporarily emulate the training state while calling `_unshard` to
     # ensure the correct `as_params` for `_use_unsharded_views()`
