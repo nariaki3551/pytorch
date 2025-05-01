@@ -3,6 +3,7 @@ import functools
 import logging
 from enum import auto, Enum
 from typing import Any, Callable, no_type_check, Optional
+import inspect
 
 import torch
 import torch.distributed as dist
@@ -284,6 +285,7 @@ def _unshard(
     Postcondition: handle's ``FlatParameter`` 's data is the padded
     unsharded flat parameter on the compute device.
     """
+    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: handle index: {handle._handle_index}")
     if not handle:
         return
     with state._device_handle.stream(pre_unshard_stream):
@@ -299,11 +301,14 @@ def _unshard(
                 event.synchronize()
     with state._device_handle.stream(unshard_stream):
         all_gather_work = handle.unshard()
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: backend: {dist.get_backend()}, state: {id(state)}, _FSDPState {id(_FSDPState)}")
         if dist.get_backend() == "mpi":
             if _FSDPState._unshard_work_to_wait is not None:
+                print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(_FSDPState._unshard_work_to_wait)}")
                 _FSDPState._unshard_work_to_wait.wait()
                 _FSDPState._unshard_work_to_wait = None
         _FSDPState._unshard_work_to_wait = all_gather_work
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set unshard_work_to_wait: {id(_FSDPState._unshard_work_to_wait)}")
         handle.post_unshard()
 
 
@@ -413,6 +418,7 @@ def _pre_forward_unshard(
     state: _FSDPState,
     handle: Optional[FlatParamHandle],
 ) -> None:
+    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: handle index: {handle._handle_index}")
     """Unshards parameters in the pre-forward."""
     if not handle:
         return
@@ -587,6 +593,7 @@ def _root_pre_forward(
             for handle in handles:
                 handle._needs_pre_forward_unshard = True
                 handle._prefetched = False
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: _wait_for_computation_stream")
         _wait_for_computation_stream(
             state._device_handle.current_stream(),
             state._unshard_stream,
@@ -642,6 +649,7 @@ def _pre_backward_hook(
         module (nn.Module): Fully sharded module (see [Note: Fully Sharded
             Module]).
     """
+    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: handle index: {handle._handle_index}")
     # Only run the pre-backward hook once per group of handles involved in the
     # same module forward computation
     if (
@@ -686,6 +694,7 @@ def _pre_backward_hook(
                 state._device_handle.current_stream().wait_stream(state._unshard_stream)
             if dist.get_backend() == "mpi":
                 if _FSDPState._unshard_work_to_wait is not None:
+                    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(_FSDPState._unshard_work_to_wait)}")
                     _FSDPState._unshard_work_to_wait.wait()
                     _FSDPState._unshard_work_to_wait = None
         # Set this to `False` to ensure that a mistargeted prefetch does not
@@ -1225,6 +1234,7 @@ def _prefetch_handle(
     if not handle:
         if dist.get_backend() == "mpi":
             if _FSDPState._unshard_work_to_wait is not None:
+                print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(_FSDPState._unshard_work_to_wait)}")
                 _FSDPState._unshard_work_to_wait.wait()
                 _FSDPState._unshard_work_to_wait = None
         return
