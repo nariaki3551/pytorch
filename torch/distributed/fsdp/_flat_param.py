@@ -8,7 +8,6 @@ from collections.abc import Generator, Iterator, Sequence
 from enum import auto, Enum
 from itertools import accumulate, chain
 from typing import Any, Callable, cast, NamedTuple, no_type_check, Optional, Union
-import inspect
 
 import torch
 import torch.distributed as dist
@@ -1353,7 +1352,6 @@ class FlatParamHandle:
         """Wait for the unshard work to complete."""
         if self._unwaited_unshard_work is None:
             return  # no-op when there is no unshard work to wait for
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _unwaited_unshard_work {id(self._unwaited_unshard_work)}")
         self._unwaited_unshard_work.wait()
         self._unwaited_unshard_work = None
 
@@ -1466,7 +1464,6 @@ class FlatParamHandle:
         self.wait_unshard_work()
         if async_op:
             self._unwaited_unshard_work = all_gather_work
-            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _unwaited_unshard_work: {id(self._unwaited_unshard_work)}, handle index: {self._handle_index}")
 
         if self._offload_params:
             # In case of offloading, `flat_param.data` (i.e. sharded param) is

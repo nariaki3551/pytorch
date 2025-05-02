@@ -3,7 +3,6 @@ import functools
 import logging
 from enum import auto, Enum
 from typing import Any, Callable, no_type_check, Optional
-import inspect
 
 import torch
 import torch.distributed as dist
@@ -285,7 +284,6 @@ def _unshard(
     Postcondition: handle's ``FlatParameter`` 's data is the padded
     unsharded flat parameter on the compute device.
     """
-    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: handle index: {handle._handle_index}")
     if not handle:
         return
     with state._device_handle.stream(pre_unshard_stream):
@@ -411,7 +409,6 @@ def _pre_forward_unshard(
     state: _FSDPState,
     handle: Optional[FlatParamHandle],
 ) -> None:
-    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: handle index: {handle._handle_index if handle is not None else None}")
     """Unshards parameters in the pre-forward."""
     if not handle:
         return
@@ -588,7 +585,6 @@ def _root_pre_forward(
             for handle in handles:
                 handle._needs_pre_forward_unshard = True
                 handle._prefetched = False
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: _wait_for_computation_stream")
         _wait_for_computation_stream(
             state._device_handle.current_stream(),
             state._unshard_stream,
@@ -644,7 +640,6 @@ def _pre_backward_hook(
         module (nn.Module): Fully sharded module (see [Note: Fully Sharded
             Module]).
     """
-    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: handle index: {handle._handle_index if handle is not None else None}")
     # Only run the pre-backward hook once per group of handles involved in the
     # same module forward computation
     if (
