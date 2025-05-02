@@ -693,7 +693,7 @@ def _pre_backward_hook(
             _prefetch_handle(state, handle, _PrefetchMode.BACKWARD)
         handle.prepare_gradient_for_backward()
         handle._ran_pre_backward_hook = True
-        _p_assert(handle._unwaited_unshard_work is None, "wait_unshard_work() must be called to ensure unshard work is completed")
+        _p_assert(handle is None or handle._unwaited_unshard_work is None, "wait_unshard_work() must be called to ensure unshard work is completed")
         return grad
 
 
