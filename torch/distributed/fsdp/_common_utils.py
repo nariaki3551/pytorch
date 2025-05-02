@@ -105,8 +105,6 @@ class _UninitializedDeviceHandle(_FSDPDeviceHandle):
 
 
 class _FSDPState(_State):
-    _unshard_work_to_wait: Optional[dist.Work] = None
-
     def __init__(self) -> None:
         # TODO: Move all the attributes to this class to enable typing for
         # FSDP/fully_shard.
