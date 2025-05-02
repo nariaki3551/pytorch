@@ -57,24 +57,3 @@ quicklint:
 triton:
 	$(PIP) uninstall -y triton
 	@./scripts/install_triton_wheel.sh
-
-rebuild:
-	CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-	TORCH_CUDA_ARCH_LIST="7.0" \
-	BUILD_SPLIT_CUDA=ON \
-	DEBUG=ON \
-	MAX_JOBS=24 \
-	USE_DISTRIBUTED=1 \
-	USE_MPI=1 \
-	USE_C10D_MPI=1 \
-	USE_NCCL=1 \
-	USE_SYSTEM_NCCL=1 \
-	USE_STATIC_NCCL=OFF \
-	USE_CUDA=1 \
-	USE_MKLDNN=OFF \
-	USE_FBGEMM=OFF \
-	USE_QNNPACK=OFF \
-	USE_XNNPACK=OFF \
-	USE_KINETO=OFF \
-	USE_PROF=OFF \
-	pip3 install --log build_torch.log -e .
