@@ -8,6 +8,7 @@ from collections.abc import Generator, Iterator, Sequence
 from enum import auto, Enum
 from itertools import accumulate, chain
 from typing import Any, Callable, cast, NamedTuple, no_type_check, Optional, Union
+import inspect
 
 import torch
 import torch.distributed as dist
@@ -574,6 +575,8 @@ class FlatParamHandle:
         self._needs_pre_backward_unshard = False
         # Was the handle prefetched? Set on successful _prefetch_handle and unshard
         self._prefetched = False
+        # Allgather work for unsharding
+        self._unshard_work_to_wait: Optional[dist.Work] = None
         # Optimistically assume a valid input `params` and set dtype attributes
         # before `_init_flat_param()`, which performs the actual validation
         self._orig_param_dtype = params[0].dtype
@@ -1343,9 +1346,8 @@ class FlatParamHandle:
             self._use_unsharded_flat_param(unsharded_flat_param)
             return
         unsharded_flat_param = self._alloc_padded_unsharded_flat_param()
-        padded_unsharded_flat_param, all_gather_work = self._all_gather_flat_param(unsharded_flat_param)
+        padded_unsharded_flat_param = self._all_gather_flat_param(unsharded_flat_param)
         self._use_unsharded_flat_param(padded_unsharded_flat_param)
-        return all_gather_work
 
     def needs_unshard(self) -> bool:
         """Return if the handle's flat parameter needs to be unsharded."""
@@ -1428,10 +1430,12 @@ class FlatParamHandle:
             else self.process_group
         )
 
+        
         if dist.get_backend() == "mpi":
             async_op = True
         else:
             async_op = False
+
         # HACK this should be handled by C10D
         if sharded_flat_param.is_cpu:  # type: ignore[attr-defined]
             tensor_list = list(
@@ -1448,6 +1452,13 @@ class FlatParamHandle:
                 pg,
                 async_op=async_op,
             )
+        if self._unshard_work_to_wait is not None:
+            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(self._unshard_work_to_wait)}")
+            self._unshard_work_to_wait.wait()
+            self._unshard_work_to_wait = None
+        if async_op:
+            self._unshard_work_to_wait = all_gather_work
+            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set unshard_work_to_wait: {id(self._unshard_work_to_wait)}")
 
         if self._offload_params:
             # In case of offloading, `flat_param.data` (i.e. sharded param) is
@@ -1457,7 +1468,7 @@ class FlatParamHandle:
                 sharded_flat_param,
                 self._device_handle.current_stream(),  # unshard_stream
             )
-        return padded_unsharded_flat_param, all_gather_work
+        return padded_unsharded_flat_param
 
     def _use_unsharded_flat_param(
         self,

@@ -300,15 +300,7 @@ def _unshard(
             ):
                 event.synchronize()
     with state._device_handle.stream(unshard_stream):
-        all_gather_work = handle.unshard()
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: backend: {dist.get_backend()}, state: {id(state)}, _FSDPState {id(_FSDPState)}")
-        if dist.get_backend() == "mpi":
-            if _FSDPState._unshard_work_to_wait is not None:
-                print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(_FSDPState._unshard_work_to_wait)}")
-                _FSDPState._unshard_work_to_wait.wait()
-                _FSDPState._unshard_work_to_wait = None
-        _FSDPState._unshard_work_to_wait = all_gather_work
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set unshard_work_to_wait: {id(_FSDPState._unshard_work_to_wait)}")
+        handle.unshard()
         handle.post_unshard()
 
 
@@ -426,6 +418,10 @@ def _pre_forward_unshard(
     # `_unshard()` again
     if not handle._prefetched:
         _unshard(state, handle, state._unshard_stream, state._pre_unshard_stream)
+    if handle._unshard_work_to_wait is not None:
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(handle._unshard_work_to_wait)}")
+        handle._unshard_work_to_wait.wait()
+        handle._unshard_work_to_wait = None
     handle._needs_pre_forward_unshard = False
     # Don't wait during trace
     if not torch.distributed._functional_collectives.is_torchdynamo_compiling():
@@ -692,11 +688,10 @@ def _pre_backward_hook(
             # Don't wait during trace
             if not torch.distributed._functional_collectives.is_torchdynamo_compiling():
                 state._device_handle.current_stream().wait_stream(state._unshard_stream)
-            if dist.get_backend() == "mpi":
-                if _FSDPState._unshard_work_to_wait is not None:
-                    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(_FSDPState._unshard_work_to_wait)}")
-                    _FSDPState._unshard_work_to_wait.wait()
-                    _FSDPState._unshard_work_to_wait = None
+            if handle._unshard_work_to_wait is not None:
+                print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(handle._unshard_work_to_wait)}")
+                handle._unshard_work_to_wait.wait()
+                handle._unshard_work_to_wait = None
         # Set this to `False` to ensure that a mistargeted prefetch does not
         # actually unshard these handles
         handle._needs_pre_backward_unshard = False
@@ -1232,11 +1227,6 @@ def _prefetch_handle(
         return
     handle = _get_handle_to_prefetch(state, current_handle)
     if not handle:
-        if dist.get_backend() == "mpi":
-            if _FSDPState._unshard_work_to_wait is not None:
-                print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(_FSDPState._unshard_work_to_wait)}")
-                _FSDPState._unshard_work_to_wait.wait()
-                _FSDPState._unshard_work_to_wait = None
         return
     # Temporarily emulate the training state while calling `_unshard` to
     # ensure the correct `as_params` for `_use_unsharded_views()`
