@@ -1349,6 +1349,14 @@ class FlatParamHandle:
         padded_unsharded_flat_param = self._all_gather_flat_param(unsharded_flat_param)
         self._use_unsharded_flat_param(padded_unsharded_flat_param)
 
+    def wait_unshard_work(self):
+        """Wait for the unshard work to complete."""
+        if self._unwaited_unshard_work is None:
+            return  # no-op when there is no unshard work to wait for
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _unwaited_unshard_work {id(self._unwaited_unshard_work)}")
+        self._unwaited_unshard_work.wait()
+        self._unwaited_unshard_work = None
+
     def needs_unshard(self) -> bool:
         """Return if the handle's flat parameter needs to be unsharded."""
         if not self.uses_sharded_strategy:
@@ -1455,10 +1463,7 @@ class FlatParamHandle:
                 pg,
                 async_op=async_op,
             )
-        if self._unwaited_unshard_work is not None:
-            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _unwaited_unshard_work {id(self._unwaited_unshard_work)}")
-            self._unwaited_unshard_work.wait()
-            self._unwaited_unshard_work = None
+        self.wait_unshard_work()
         if async_op:
             self._unwaited_unshard_work = all_gather_work
             print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _unwaited_unshard_work: {id(self._unwaited_unshard_work)}, handle index: {self._handle_index}")

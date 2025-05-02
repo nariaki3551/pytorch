@@ -417,7 +417,6 @@ def foreach_reduce(
                 reduce_scatter_reduce_op = ReduceOp.AVG
             else:
                 reduce_scatter_reduce_op = ReduceOp.SUM
-        import inspect; print(f"[{__file__}:{inspect.currentframe().f_lineno}] output={reduce_output.shape} input={reduce_scatter_input.shape}")
         dist.reduce_scatter_tensor(
             output=reduce_output,
             input=reduce_scatter_input,
