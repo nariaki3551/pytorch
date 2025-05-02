@@ -576,7 +576,7 @@ class FlatParamHandle:
         # Was the handle prefetched? Set on successful _prefetch_handle and unshard
         self._prefetched = False
         # Allgather work for unsharding
-        self._unshard_work_to_wait: Optional[dist.Work] = None
+        self._unwaited_unshard_work: Optional[dist.Work] = None
         # Optimistically assume a valid input `params` and set dtype attributes
         # before `_init_flat_param()`, which performs the actual validation
         self._orig_param_dtype = params[0].dtype
@@ -1430,8 +1430,11 @@ class FlatParamHandle:
             else self.process_group
         )
 
-        
         if dist.get_backend() == "mpi":
+            # Set async_op to True to delay the wait for all_gather_work for unshard.
+            # This enables overlapping of communication and computation, and overlapping of
+            # reduce_scatter (for gradient collection) and all_gather (for unshard) when using
+            # the MPI backend, improving utilization of compute and network resources.
             async_op = True
         else:
             async_op = False
@@ -1452,13 +1455,13 @@ class FlatParamHandle:
                 pg,
                 async_op=async_op,
             )
-        if self._unshard_work_to_wait is not None:
-            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(self._unshard_work_to_wait)}")
-            self._unshard_work_to_wait.wait()
-            self._unshard_work_to_wait = None
+        if self._unwaited_unshard_work is not None:
+            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _unwaited_unshard_work {id(self._unwaited_unshard_work)}")
+            self._unwaited_unshard_work.wait()
+            self._unwaited_unshard_work = None
         if async_op:
-            self._unshard_work_to_wait = all_gather_work
-            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set unshard_work_to_wait: {id(self._unshard_work_to_wait)}")
+            self._unwaited_unshard_work = all_gather_work
+            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _unwaited_unshard_work: {id(self._unwaited_unshard_work)}, handle index: {self._handle_index}")
 
         if self._offload_params:
             # In case of offloading, `flat_param.data` (i.e. sharded param) is

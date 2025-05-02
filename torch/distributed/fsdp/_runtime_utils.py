@@ -418,10 +418,10 @@ def _pre_forward_unshard(
     # `_unshard()` again
     if not handle._prefetched:
         _unshard(state, handle, state._unshard_stream, state._pre_unshard_stream)
-    if handle._unshard_work_to_wait is not None:
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(handle._unshard_work_to_wait)}")
-        handle._unshard_work_to_wait.wait()
-        handle._unshard_work_to_wait = None
+    if handle._unwaited_unshard_work is not None:
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _unwaited_unshard_work {id(handle._unwaited_unshard_work)}, handle index: {handle._handle_index}")
+        handle._unwaited_unshard_work.wait()
+        handle._unwaited_unshard_work = None
     handle._needs_pre_forward_unshard = False
     # Don't wait during trace
     if not torch.distributed._functional_collectives.is_torchdynamo_compiling():
@@ -688,10 +688,10 @@ def _pre_backward_hook(
             # Don't wait during trace
             if not torch.distributed._functional_collectives.is_torchdynamo_compiling():
                 state._device_handle.current_stream().wait_stream(state._unshard_stream)
-            if handle._unshard_work_to_wait is not None:
-                print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: unshard_work_to_wait.wait() {id(handle._unshard_work_to_wait)}")
-                handle._unshard_work_to_wait.wait()
-                handle._unshard_work_to_wait = None
+            if handle._unwaited_unshard_work is not None:
+                print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _unwaited_unshard_work {id(handle._unwaited_unshard_work)}, handle index: {handle._handle_index}")
+                handle._unwaited_unshard_work.wait()
+                handle._unwaited_unshard_work = None
         # Set this to `False` to ensure that a mistargeted prefetch does not
         # actually unshard these handles
         handle._needs_pre_backward_unshard = False
