@@ -1218,7 +1218,6 @@ def _prefetch_handle(
     Prefetches the next handles if needed (without synchronization). An empty
     handles key cannot prefetch.
     """
-    print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: prefetch_handle: {current_handle._handle_index}")
     if not current_handle:
         return
     handle = _get_handle_to_prefetch(state, current_handle)
