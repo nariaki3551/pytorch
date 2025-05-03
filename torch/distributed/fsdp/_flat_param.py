@@ -1355,7 +1355,7 @@ class FlatParamHandle:
         """Wait for the unshard work to complete."""
         if self._all_gather_work is None:
             return  # no-op when there is no all gather work to wait for
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _all_gather_work {id(self._all_gather_work)}")
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _all_gather_work, handle index: {self._handle_index}")
         self._all_gather_work.wait()
         self._all_gather_work = None
 
@@ -1363,7 +1363,7 @@ class FlatParamHandle:
         """Wait for the reduce scatter work to complete."""
         if self._reduce_scatter_work is None:
             return  # no-op when there is no reduce scatter work to wait for
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _reduce_scatter_work {id(self._reduce_scatter_work)}")
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _reduce_scatter_work, handle index: {self._handle_index}")
         self._reduce_scatter_work.wait()
         self._reduce_scatter_work = None
 
@@ -1478,7 +1478,7 @@ class FlatParamHandle:
         if async_op:
             self.wait_all_gather_work()
             self._all_gather_work = all_gather_work
-            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _all_gather_work: {id(self._all_gather_work)}, handle index: {self._handle_index}")
+            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _all_gather_work, handle index: {self._handle_index}")
 
         if self._offload_params:
             # In case of offloading, `flat_param.data` (i.e. sharded param) is

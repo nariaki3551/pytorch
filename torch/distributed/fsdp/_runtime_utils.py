@@ -892,7 +892,7 @@ def _reduce_grad(state: _FSDPState, handle: FlatParamHandle) -> None:
         )
         handle._reduce_scatter_work = reduce_scatter_work
         _FSDPState._reduce_scatter_work_handle = handle
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _reduce_scatter_work: {id(handle._reduce_scatter_work) if handle._reduce_scatter_work is not None else None}, handle index: {handle._handle_index}")
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _reduce_scatter_work, handle index: {handle._handle_index}")
         if uses_hybrid_sharded_strategy:
             # Don't wait during trace
             if not torch.distributed._functional_collectives.is_torchdynamo_compiling():
@@ -1136,6 +1136,7 @@ def _post_backward_final_callback(
         # pushed to the next forward if run in a different stream
         current_stream.wait_stream(root_state._post_backward_stream)
         if _FSDPState._reduce_scatter_work_handle is not None:
+            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait_reduce_scatter_work, handle index: {_FSDPState._reduce_scatter_work_handle._handle_index}")
             _FSDPState._reduce_scatter_work_handle.wait_reduce_scatter_work()
             _FSDPState._reduce_scatter_work_handle = None
         if root_state._all_reduce_stream is not current_stream:  # uses HSDP
