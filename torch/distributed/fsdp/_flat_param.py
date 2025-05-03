@@ -576,7 +576,9 @@ class FlatParamHandle:
         # Was the handle prefetched? Set on successful _prefetch_handle and unshard
         self._prefetched = False
         # Allgather work for unsharding
-        self._unwaited_unshard_work: Optional[dist.Work] = None
+        self._all_gather_work: Optional[dist.Work] = None
+        # Reduce scatter work for unsharding
+        self._reduce_scatter_work: Optional[dist.Work] = None
         # Optimistically assume a valid input `params` and set dtype attributes
         # before `_init_flat_param()`, which performs the actual validation
         self._orig_param_dtype = params[0].dtype
@@ -1349,13 +1351,21 @@ class FlatParamHandle:
         padded_unsharded_flat_param = self._all_gather_flat_param(unsharded_flat_param)
         self._use_unsharded_flat_param(padded_unsharded_flat_param)
 
-    def wait_unshard_work(self):
+    def wait_all_gather_work(self):
         """Wait for the unshard work to complete."""
-        if self._unwaited_unshard_work is None:
-            return  # no-op when there is no unshard work to wait for
-        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _unwaited_unshard_work {id(self._unwaited_unshard_work)}")
-        self._unwaited_unshard_work.wait()
-        self._unwaited_unshard_work = None
+        if self._all_gather_work is None:
+            return  # no-op when there is no all gather work to wait for
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _all_gather_work {id(self._all_gather_work)}")
+        self._all_gather_work.wait()
+        self._all_gather_work = None
+
+    def wait_reduce_scatter_work(self):
+        """Wait for the reduce scatter work to complete."""
+        if self._reduce_scatter_work is None:
+            return  # no-op when there is no reduce scatter work to wait for
+        print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: wait _reduce_scatter_work {id(self._reduce_scatter_work)}")
+        self._reduce_scatter_work.wait()
+        self._reduce_scatter_work = None
 
     def needs_unshard(self) -> bool:
         """Return if the handle's flat parameter needs to be unsharded."""
@@ -1455,7 +1465,9 @@ class FlatParamHandle:
                     dist.get_world_size(pg),  # type: ignore[arg-type]
                 )
             )
-            all_gather_work = dist.all_gather(tensor_list, sharded_flat_param, group=pg, async_op=async_op)
+            all_gather_work = dist.all_gather(
+                tensor_list, sharded_flat_param, group=pg, async_op=async_op
+            )
         else:
             all_gather_work = dist.all_gather_into_tensor(
                 padded_unsharded_flat_param,
@@ -1463,10 +1475,10 @@ class FlatParamHandle:
                 pg,
                 async_op=async_op,
             )
-        self.wait_unshard_work()
         if async_op:
-            self._unwaited_unshard_work = all_gather_work
-            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _unwaited_unshard_work: {id(self._unwaited_unshard_work)}, handle index: {self._handle_index}")
+            self.wait_all_gather_work()
+            self._all_gather_work = all_gather_work
+            print(f"[{__file__}:{inspect.currentframe().f_lineno}, {inspect.currentframe().f_code.co_name}] rank{dist.get_rank()}: set _all_gather_work: {id(self._all_gather_work)}, handle index: {self._handle_index}")
 
         if self._offload_params:
             # In case of offloading, `flat_param.data` (i.e. sharded param) is
